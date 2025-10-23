@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 interface OrderItem {
@@ -33,8 +33,11 @@ interface Order {
 export default function OrdersPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [orders, setOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [successOrderNumber, setSuccessOrderNumber] = useState<string | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -46,7 +49,16 @@ export default function OrdersPage() {
       router.push('/dashboard')
       return
     }
-  }, [status, session, router])
+
+    // Vérifier si on vient d'une commande réussie
+    const successParam = searchParams.get('success')
+    if (successParam) {
+      setSuccessOrderNumber(successParam)
+      setShowSuccess(true)
+      // Nettoyer l'URL
+      router.replace('/orders')
+    }
+  }, [status, session, router, searchParams])
 
   useEffect(() => {
     if (status === 'authenticated' && (session?.user as any)?.role !== 'ADMIN') {
@@ -132,6 +144,32 @@ export default function OrdersPage() {
 
       <main className="p-6">
         <div className="max-w-4xl mx-auto">
+          {/* Message de succès */}
+          {showSuccess && (
+            <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-3">
+                <span className="material-symbols-outlined text-green-600">
+                  check_circle
+                </span>
+                <div>
+                  <h3 className="font-semibold text-green-800">
+                    Commande confirmée !
+                  </h3>
+                  <p className="text-sm text-green-600">
+                    Votre commande #{successOrderNumber} a été enregistrée. 
+                    Vous recevrez un email de confirmation avec votre QR code de retrait.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowSuccess(false)}
+                  className="ml-auto text-green-600 hover:text-green-800"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {orders.length === 0 ? (
             <div className="text-center py-12">
               <span className="material-symbols-outlined text-6xl text-[#897561] mb-4">receipt_long</span>

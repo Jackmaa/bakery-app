@@ -5,15 +5,8 @@ import CartItem from "@/components/CartItem";
 import { useCart } from "@/context/CartContext";
 
 export default function CartPage() {
-  const {
-    items,
-    updateQuantity,
-    removeItem,
-    clearCart,
-    subtotal,
-    deliveryFee,
-    total,
-  } = useCart();
+  const { items, updateQuantity, removeItem, clearCart, subtotal, total } =
+    useCart();
 
   return (
     <div className="min-h-screen bg-[#f8f6f4]">
@@ -108,19 +101,6 @@ export default function CartPage() {
                     <span>Sous-total</span>
                     <span>{subtotal.toFixed(2)} €</span>
                   </div>
-                  <div className="flex justify-between text-[#897561]">
-                    <span>Livraison</span>
-                    <span>
-                      {deliveryFee === 0
-                        ? "Gratuite"
-                        : `${deliveryFee.toFixed(2)} €`}
-                    </span>
-                  </div>
-                  {deliveryFee > 0 && (
-                    <p className="text-xs text-[#897561] bg-[#f8f6f4] p-2 rounded">
-                      Livraison gratuite à partir de 20 €
-                    </p>
-                  )}
                   <div className="border-t border-[#e6e0db] pt-3">
                     <div className="flex justify-between text-lg font-bold text-[#181411]">
                       <span>Total</span>
@@ -159,7 +139,7 @@ export default function CartPage() {
                     <span className="material-symbols-outlined text-primary">
                       check_circle
                     </span>
-                    <p className="text-sm text-[#897561]">Livraison rapide</p>
+                    <p className="text-sm text-[#897561]">Retrait en magasin</p>
                   </div>
                   <div className="flex items-start gap-3">
                     <span className="material-symbols-outlined text-primary">
