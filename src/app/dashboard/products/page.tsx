@@ -315,7 +315,7 @@ export default function ProductsPage() {
                         onClick={() => toggleAvailability(product)}
                         className={`rounded ${
                           product.isAvailable
-                            ? "bg-transparant text-white"
+                            ? "bg-transparant text-black"
                             : "bg-transparent text-red-600"
                         }`}
                         title={
