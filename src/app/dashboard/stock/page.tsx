@@ -49,6 +49,7 @@ export default function StockPage() {
   const [adjustmentQuantity, setAdjustmentQuantity] = useState("");
   const [adjustmentReason, setAdjustmentReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
   const [filterLowStock, setFilterLowStock] = useState(false);
 
   useEffect(() => {
@@ -134,6 +135,33 @@ export default function StockPage() {
     }
   };
 
+  const createSnapshot = async (type: "OPENING" | "CLOSING") => {
+    setIsCreatingSnapshot(true);
+    try {
+      const response = await fetch("/api/stock/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`✅ ${data.message}\n${data.count} produits enregistrés`);
+      } else {
+        const error = await response.json();
+        alert(`❌ Erreur: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Erreur:", error);
+      alert("❌ Erreur lors de la création du snapshot");
+    } finally {
+      setIsCreatingSnapshot(false);
+    }
+  };
+
+  const handleOpeningSnapshot = () => createSnapshot("OPENING");
+  const handleClosingSnapshot = () => createSnapshot("CLOSING");
+
   const getStockStatus = (stock: number) => {
     if (stock === 0)
       return {
@@ -213,17 +241,42 @@ export default function StockPage() {
             </h1>
           </div>
 
-          <button
-            onClick={() => setFilterLowStock(!filterLowStock)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              filterLowStock
-                ? "bg-orange-50 text-orange-600"
-                : "bg-gray-50 text-[#897561] hover:bg-gray-100"
-            }`}
-          >
-            <span className="material-symbols-outlined">filter_alt</span>
-            {filterLowStock ? "Stock faible uniquement" : "Tous les produits"}
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Snapshot Buttons */}
+            <button
+              onClick={handleOpeningSnapshot}
+              disabled={isCreatingSnapshot}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined">wb_twilight</span>
+              <span className="hidden sm:inline">Snapshot Début</span>
+            </button>
+            <button
+              onClick={handleClosingSnapshot}
+              disabled={isCreatingSnapshot}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined">nightlight</span>
+              <span className="hidden sm:inline">Snapshot Fin</span>
+            </button>
+
+            {/* Filter Button */}
+            <button
+              onClick={() => setFilterLowStock(!filterLowStock)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                filterLowStock
+                  ? "bg-orange-50 text-orange-600"
+                  : "bg-gray-50 text-[#897561] hover:bg-gray-100"
+              }`}
+            >
+              <span className="material-symbols-outlined">filter_alt</span>
+              <span className="hidden lg:inline">
+                {filterLowStock
+                  ? "Stock faible uniquement"
+                  : "Tous les produits"}
+              </span>
+            </button>
+          </div>
         </div>
       </header>
 

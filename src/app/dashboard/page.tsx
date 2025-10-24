@@ -22,6 +22,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreatingSnapshot, setIsCreatingSnapshot] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -58,6 +59,33 @@ export default function DashboardPage() {
       setIsLoading(false);
     }
   };
+
+  const createSnapshot = async (type: "OPENING" | "CLOSING") => {
+    setIsCreatingSnapshot(true);
+    try {
+      const response = await fetch("/api/stock/snapshot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        alert(`✅ ${data.message}\n${data.count} produits enregistrés`);
+      } else {
+        const error = await response.json();
+        alert(`❌ Erreur: ${error.error}`);
+      }
+    } catch (error) {
+      console.error("Erreur:", error);
+      alert("❌ Erreur lors de la création du snapshot");
+    } finally {
+      setIsCreatingSnapshot(false);
+    }
+  };
+
+  const handleOpeningSnapshot = () => createSnapshot("OPENING");
+  const handleClosingSnapshot = () => createSnapshot("CLOSING");
 
   if (status === "loading" || isLoading) {
     return (
@@ -254,13 +282,13 @@ export default function DashboardPage() {
                   <span>Gérer le stock</span>
                 </Link>
                 <Link
-                  href="/dashboard/scan"
+                  href="/dashboard/analytics"
                   className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
                 >
                   <span className="material-symbols-outlined text-primary">
-                    qr_code_scanner
+                    trending_up
                   </span>
-                  <span>Scanner QR Code</span>
+                  <span>Analytics des stocks</span>
                 </Link>
               </div>
             </div>
@@ -269,7 +297,7 @@ export default function DashboardPage() {
               <h3 className="text-lg font-bold text-[#181411] mb-4">
                 Statistiques récentes
               </h3>
-              <div className="space-y-4">
+              <div className="space-y-4 mb-6">
                 <div className="flex justify-between items-center">
                   <span className="text-[#897561]">
                     Commandes cette semaine
@@ -301,6 +329,35 @@ export default function DashboardPage() {
                   >
                     {stats?.lowStockProducts || 0}
                   </span>
+                </div>
+              </div>
+
+              {/* Snapshot Buttons */}
+              <div className="pt-4 border-t border-[#f4f2f0]">
+                <p className="text-sm font-medium text-[#897561] mb-3">
+                  Enregistrement du stock
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleOpeningSnapshot}
+                    disabled={isCreatingSnapshot}
+                    className="flex flex-col items-center gap-1 p-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined">
+                      wb_twilight
+                    </span>
+                    <span className="text-xs font-medium">Début journée</span>
+                  </button>
+                  <button
+                    onClick={handleClosingSnapshot}
+                    disabled={isCreatingSnapshot}
+                    className="flex flex-col items-center gap-1 p-3 bg-orange-50 text-orange-600 rounded-lg hover:bg-orange-100 transition-colors disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined">
+                      nightlight
+                    </span>
+                    <span className="text-xs font-medium">Fin journée</span>
+                  </button>
                 </div>
               </div>
             </div>
