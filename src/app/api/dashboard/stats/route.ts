@@ -1,32 +1,41 @@
-import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
-export async function GET(req: Request) {
+// GET /api/dashboard/stats - Récupérer les statistiques du dashboard
+export async function GET() {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session || (session.user as any).role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
+    const session = await getServerSession(authOptions);
+
+    if (!session || (session.user as any).role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Non autorisé - Accès admin requis" },
+        { status: 401 }
+      );
     }
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
+    // Dates pour aujourd'hui et hier
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    // Commandes du jour
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Commandes aujourd'hui
     const todayOrders = await prisma.order.count({
       where: {
         createdAt: {
           gte: today,
+          lt: tomorrow,
         },
       },
-    })
+    });
 
-    // Commandes d'hier
+    // Commandes hier
     const yesterdayOrders = await prisma.order.count({
       where: {
         createdAt: {
@@ -34,91 +43,123 @@ export async function GET(req: Request) {
           lt: today,
         },
       },
-    })
+    });
 
-    // Chiffre d'affaires du jour
-    const todayRevenue = await prisma.order.aggregate({
+    // Chiffre d'affaires aujourd'hui
+    const todayOrdersData = await prisma.order.findMany({
       where: {
         createdAt: {
           gte: today,
+          lt: tomorrow,
         },
         status: {
-          notIn: ['CANCELLED'],
+          not: "CANCELLED",
         },
       },
-      _sum: {
+      select: {
         totalAmount: true,
       },
-    })
+    });
+    const todayRevenue = todayOrdersData.reduce(
+      (sum, order) => sum + order.totalAmount,
+      0
+    );
 
-    // Chiffre d'affaires d'hier
-    const yesterdayRevenue = await prisma.order.aggregate({
+    // Chiffre d'affaires hier
+    const yesterdayOrdersData = await prisma.order.findMany({
       where: {
         createdAt: {
           gte: yesterday,
           lt: today,
         },
         status: {
-          notIn: ['CANCELLED'],
+          not: "CANCELLED",
         },
       },
-      _sum: {
+      select: {
         totalAmount: true,
       },
-    })
+    });
+    const yesterdayRevenue = yesterdayOrdersData.reduce(
+      (sum, order) => sum + order.totalAmount,
+      0
+    );
 
-    // Produit le plus vendu aujourd'hui
-    const topProductToday = await prisma.orderItem.groupBy({
-      by: ['productId'],
-      where: {
-        order: {
-          createdAt: {
-            gte: today,
-          },
-        },
-      },
+    // Produit le plus vendu
+    const topProductData = await prisma.orderItem.groupBy({
+      by: ["productId"],
       _sum: {
         quantity: true,
       },
       orderBy: {
         _sum: {
-          quantity: 'desc',
+          quantity: "desc",
         },
       },
       take: 1,
-    })
+    });
 
-    let topProduct = 'N/A'
-    if (topProductToday.length > 0) {
+    let topProduct = "N/A";
+    if (topProductData.length > 0) {
       const product = await prisma.product.findUnique({
-        where: { id: topProductToday[0].productId },
-      })
+        where: { id: topProductData[0].productId },
+        select: { name: true },
+      });
       if (product) {
-        topProduct = product.name
+        topProduct = product.name;
       }
     }
 
-    // Calculer les pourcentages de changement
-    const ordersChange = yesterdayOrders > 0
-      ? ((todayOrders - yesterdayOrders) / yesterdayOrders) * 100
-      : todayOrders > 0 ? 100 : 0
+    // Produits avec stock faible (< 10)
+    const lowStockProducts = await prisma.product.count({
+      where: {
+        stock: {
+          lt: 10,
+        },
+      },
+    });
 
-    const revenueChange = (yesterdayRevenue._sum.totalAmount || 0) > 0
-      ? ((((todayRevenue._sum.totalAmount || 0) - (yesterdayRevenue._sum.totalAmount || 0)) / (yesterdayRevenue._sum.totalAmount || 0)) * 100)
-      : (todayRevenue._sum.totalAmount || 0) > 0 ? 100 : 0
+    // Statistiques supplémentaires
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - 7);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const weekOrders = await prisma.order.count({
+      where: {
+        createdAt: {
+          gte: weekStart,
+        },
+      },
+    });
+
+    const activeProducts = await prisma.product.count({
+      where: {
+        isAvailable: true,
+      },
+    });
+
+    const totalCustomers = await prisma.user.count({
+      where: {
+        role: "CUSTOMER",
+      },
+    });
 
     return NextResponse.json({
       todayOrders,
-      todayRevenue: todayRevenue._sum.totalAmount || 0,
+      yesterdayOrders,
+      todayRevenue,
+      yesterdayRevenue,
       topProduct,
-      ordersChange: Math.round(ordersChange),
-      revenueChange: Math.round(revenueChange),
-    })
+      lowStockProducts,
+      weekOrders,
+      activeProducts,
+      totalCustomers,
+    });
   } catch (error) {
-    console.error('Error fetching dashboard stats:', error)
+    console.error("Erreur lors de la récupération des statistiques:", error);
     return NextResponse.json(
-      { error: 'Erreur lors de la récupération des statistiques' },
+      { error: "Erreur lors de la récupération des statistiques" },
       { status: 500 }
-    )
+    );
   }
 }
