@@ -154,7 +154,12 @@ export async function POST(request: Request) {
         subtotal,
         tax,
         totalAmount,
-        pickupTime: pickupTime ? new Date(pickupTime) : null,
+        pickupTime: pickupTime
+          ? (() => {
+              const date = new Date(pickupTime);
+              return isNaN(date.getTime()) ? null : date;
+            })()
+          : null,
         items: {
           create: orderItems,
         },

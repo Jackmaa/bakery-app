@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 // GET /api/orders/[id] - Récupérer une commande spécifique
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -15,8 +15,10 @@ export async function GET(
       return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
     }
 
+    const { id: orderId } = await params;
+
     const order = await prisma.order.findUnique({
-      where: { id: params.id },
+      where: { id: orderId },
       include: {
         user: {
           select: {
@@ -47,12 +49,16 @@ export async function GET(
       );
     }
 
-    // Vérifier que l'utilisateur a le droit de voir cette commande
+    // Vérifier que l'utilisateur peut voir cette commande
+    // Si ce n'est pas un admin, il ne peut voir que ses propres commandes
     if (
       (session.user as any).role !== "ADMIN" &&
       order.userId !== (session.user as any).id
     ) {
-      return NextResponse.json({ error: "Non autorisé" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Accès non autorisé" },
+        { status: 403 }
+      );
     }
 
     return NextResponse.json(order);
@@ -68,49 +74,45 @@ export async function GET(
 // PATCH /api/orders/[id] - Mettre à jour le statut d'une commande
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || (session.user as any).role !== "ADMIN") {
+    if (!session) {
+      return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+    }
+
+    // Seuls les admins peuvent modifier le statut
+    if ((session.user as any).role !== "ADMIN") {
       return NextResponse.json(
-        { error: "Non autorisé - Accès admin requis" },
-        { status: 401 }
+        { error: "Accès non autorisé" },
+        { status: 403 }
       );
     }
 
+    const { id: orderId } = await params;
     const body = await request.json();
-    const { status, qrCodeScanned } = body;
+    const { status } = body;
 
-    const updateData: any = {};
-
-    // Validation du statut
-    if (status) {
-      const validStatuses = [
-        "PENDING",
-        "PREPARING",
-        "READY",
-        "COMPLETED",
-        "CANCELLED",
-      ];
-      if (!validStatuses.includes(status)) {
-        return NextResponse.json({ error: "Statut invalide" }, { status: 400 });
-      }
-      updateData.status = status;
+    if (!status) {
+      return NextResponse.json(
+        { error: "Statut requis" },
+        { status: 400 }
+      );
     }
 
-    // Mettre à jour le scan du QR code
-    if (qrCodeScanned !== undefined) {
-      updateData.qrCodeScanned = qrCodeScanned;
-      if (qrCodeScanned) {
-        updateData.qrCodeScannedAt = new Date();
-      }
+    const validStatuses = ["PENDING", "PREPARING", "READY", "COMPLETED", "CANCELLED"];
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: "Statut invalide" },
+        { status: 400 }
+      );
     }
 
-    const order = await prisma.order.update({
-      where: { id: params.id },
-      data: updateData,
+    const updatedOrder = await prisma.order.update({
+      where: { id: orderId },
+      data: { status },
       include: {
         user: {
           select: {
@@ -134,104 +136,11 @@ export async function PATCH(
       },
     });
 
-    return NextResponse.json(order);
+    return NextResponse.json(updatedOrder);
   } catch (error) {
     console.error("Erreur lors de la mise à jour de la commande:", error);
     return NextResponse.json(
       { error: "Erreur lors de la mise à jour de la commande" },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE /api/orders/[id] - Supprimer une commande
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const session = await getServerSession(authOptions);
-
-    if (!session || (session.user as any).role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Non autorisé - Accès admin requis" },
-        { status: 401 }
-      );
-    }
-
-    // Récupérer la commande avant suppression
-    const order = await prisma.order.findUnique({
-      where: { id: params.id },
-      include: {
-        items: true,
-      },
-    });
-
-    if (!order) {
-      return NextResponse.json(
-        { error: "Commande non trouvée" },
-        { status: 404 }
-      );
-    }
-
-    // Si la commande est annulée ou complétée, on peut la supprimer
-    // Sinon, on l'annule simplement
-    if (order.status !== "CANCELLED" && order.status !== "COMPLETED") {
-      // Restaurer le stock si la commande est annulée
-      for (const item of order.items) {
-        await prisma.product.update({
-          where: { id: item.productId },
-          data: {
-            stock: {
-              increment: item.quantity,
-            },
-          },
-        });
-      }
-
-      // Marquer comme annulée au lieu de supprimer
-      const cancelledOrder = await prisma.order.update({
-        where: { id: params.id },
-        data: { status: "CANCELLED" },
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
-          },
-          items: {
-            include: {
-              product: {
-                select: {
-                  id: true,
-                  name: true,
-                  image: true,
-                  price: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      return NextResponse.json({
-        message: "La commande a été annulée et le stock restauré",
-        order: cancelledOrder,
-      });
-    }
-
-    // Suppression complète si déjà annulée ou complétée
-    await prisma.order.delete({
-      where: { id: params.id },
-    });
-
-    return NextResponse.json({ message: "Commande supprimée avec succès" });
-  } catch (error) {
-    console.error("Erreur lors de la suppression de la commande:", error);
-    return NextResponse.json(
-      { error: "Erreur lors de la suppression de la commande" },
       { status: 500 }
     );
   }
