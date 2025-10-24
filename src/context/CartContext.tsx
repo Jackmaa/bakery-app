@@ -24,6 +24,7 @@ interface CartContextType {
   clearCart: () => void;
   itemsCount: number;
   subtotal: number;
+  tax: number;
   total: number;
 }
 
@@ -94,7 +95,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
     (sum, item) => sum + item.price * item.quantity,
     0
   );
-  const total = subtotal;
+  const tax = subtotal * 0.1; // 10% tax
+  const total = subtotal + tax;
 
   return (
     <CartContext.Provider
@@ -106,6 +108,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         clearCart,
         itemsCount,
         subtotal,
+        tax,
         total,
       }}
     >

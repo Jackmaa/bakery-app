@@ -1,86 +1,51 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import toast from "react-hot-toast";
 import { useCart } from "@/context/CartContext";
-
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  image: string;
-  stock: number;
-  isAvailable: boolean;
-  category: {
-    id: string;
-    name: string;
-    icon: string;
-  };
-}
 
 interface Category {
   id: string;
   name: string;
-  description: string;
-  icon: string;
+  icon: string | null;
 }
 
-interface CartItem {
-  product: Product;
-  quantity: number;
+interface Product {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  image: string | null;
+  stock: number;
+  isAvailable: boolean;
+  category: Category;
 }
 
 export default function MenuPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { items, addItem, updateQuantity, itemsCount, total } = useCart();
+
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const {
-    items,
-    addItem,
-    removeItem,
-    updateQuantity: updateCartQuantity,
-    itemsCount,
-    subtotal,
-  } = useCart();
 
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login");
       return;
     }
-
-    if (
-      status === "authenticated" &&
-      (session?.user as any)?.role === "ADMIN"
-    ) {
-      router.push("/dashboard");
-      return;
-    }
-  }, [status, session, router]);
+  }, [status, router]);
 
   useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-  }, []);
-
-  const fetchProducts = async () => {
-    try {
-      const response = await fetch("/api/products");
-      const data = await response.json();
-      setProducts(data);
-    } catch (error) {
-      toast.error("Erreur lors du chargement des produits");
-    } finally {
-      setIsLoading(false);
+    if (status === "authenticated") {
+      fetchCategories();
+      fetchProducts();
     }
-  };
+  }, [status]);
 
   const fetchCategories = async () => {
     try {
@@ -88,19 +53,32 @@ export default function MenuPage() {
       const data = await response.json();
       setCategories(data);
     } catch (error) {
-      toast.error("Erreur lors du chargement des catégories");
+      console.error("Erreur lors du chargement des catégories:", error);
     }
   };
 
-  const addToCart = (product: Product) => {
-    if (!product.isAvailable || product.stock === 0) {
-      toast.error("Produit non disponible");
-      return;
+  const fetchProducts = async () => {
+    try {
+      const response = await fetch("/api/products");
+      const data = await response.json();
+      // Filtrer uniquement les produits disponibles avec du stock
+      const availableProducts = data.filter(
+        (p: Product) => p.isAvailable && p.stock > 0
+      );
+      setProducts(availableProducts);
+    } catch (error) {
+      console.error("Erreur lors du chargement des produits:", error);
+    } finally {
+      setIsLoading(false);
     }
-    // Vérifie le stock courant dans le panier
-    const existing = items.find((it) => it.id === product.id);
-    if (existing && existing.quantity >= product.stock) {
-      toast.error("Stock insuffisant");
+  };
+
+  const handleAddToCart = (product: Product) => {
+    const cartItem = items.find((item) => item.id === product.id);
+
+    // Vérifier le stock
+    if (cartItem && cartItem.quantity >= product.stock) {
+      alert("Stock insuffisant");
       return;
     }
 
@@ -108,37 +86,29 @@ export default function MenuPage() {
       id: product.id,
       name: product.name,
       price: product.price,
-      image: product.image,
+      image: product.image || "",
     });
-    toast.success(`${product.name} ajouté au panier`);
   };
 
-  const removeFromCart = (productId: string) => {
-    removeItem(productId);
-    toast.success("Produit retiré du panier");
-  };
-
-  const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) {
-      removeFromCart(productId);
-      return;
-    }
-
+  const handleUpdateQuantity = (productId: string, quantity: number) => {
     const product = products.find((p) => p.id === productId);
+
     if (product && quantity > product.stock) {
-      toast.error("Stock insuffisant");
+      alert("Stock insuffisant");
       return;
     }
 
-    updateCartQuantity(productId, quantity);
+    updateQuantity(productId, quantity);
   };
 
-  const getTotalPrice = () => subtotal;
+  const getItemQuantity = (productId: string): number => {
+    const item = items.find((item) => item.id === productId);
+    return item?.quantity || 0;
+  };
 
-  const filteredProducts =
-    selectedCategory === "all"
-      ? products
-      : products.filter((product) => product.category.id === selectedCategory);
+  const filteredProducts = selectedCategory
+    ? products.filter((p) => p.category.id === selectedCategory)
+    : products;
 
   if (status === "loading" || isLoading) {
     return (
@@ -160,7 +130,7 @@ export default function MenuPage() {
             <span className="material-symbols-outlined text-3xl text-primary">
               bakery_dining
             </span>
-            <h1 className="text-xl font-bold text-[#181411]">Boulangerie</h1>
+            <h1 className="text-xl font-bold text-[#181411]">Notre Menu</h1>
           </div>
 
           <div className="flex items-center gap-4">
@@ -169,176 +139,199 @@ export default function MenuPage() {
               className="flex items-center gap-2 text-[#897561] hover:text-primary transition-colors"
             >
               <span className="material-symbols-outlined">receipt_long</span>
-              Mes commandes
+              <span className="hidden sm:inline">Mes commandes</span>
             </Link>
 
-            <div className="relative">
-              <Link
-                href="/cart"
-                className="flex items-center gap-2 text-[#897561] hover:text-primary transition-colors"
-              >
-                <span className="material-symbols-outlined">shopping_cart</span>
-                Panier ({itemsCount})
-              </Link>
-            </div>
-
+            {/* Cart Button */}
             <button
-              onClick={() => signOut()}
-              className="text-[#897561] hover:text-primary transition-colors"
+              onClick={() => router.push("/cart")}
+              className="relative flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
             >
-              <span className="material-symbols-outlined">logout</span>
+              <span className="material-symbols-outlined">shopping_cart</span>
+              <span className="hidden sm:inline">Panier</span>
+              {itemsCount > 0 && (
+                <span className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                  {itemsCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
-      </header>
 
-      <div className="flex">
-        {/* Sidebar - Catégories */}
-        <aside className="w-64 bg-white border-r border-[#f4f2f0] min-h-screen p-6">
-          <h2 className="text-lg font-bold text-[#181411] mb-4">Catégories</h2>
-          <nav className="space-y-2">
+        {/* Category Filters */}
+        <div className="px-6 py-3 overflow-x-auto">
+          <div className="flex gap-2 min-w-max">
             <button
-              onClick={() => setSelectedCategory("all")}
-              className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                selectedCategory === "all"
+              onClick={() => setSelectedCategory(null)}
+              className={`px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${
+                selectedCategory === null
                   ? "bg-primary text-white"
-                  : "text-[#897561] hover:bg-gray-50"
+                  : "bg-gray-100 text-[#897561] hover:bg-gray-200"
               }`}
             >
-              Tous les produits
+              Tout
             </button>
             {categories.map((category) => (
               <button
                 key={category.id}
                 onClick={() => setSelectedCategory(category.id)}
-                className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex items-center ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${
                   selectedCategory === category.id
                     ? "bg-primary text-white"
-                    : "text-[#897561] hover:bg-gray-50"
+                    : "bg-gray-100 text-[#897561] hover:bg-gray-200"
                 }`}
               >
-                <span className="material-symbols-outlined text-sm mr-2 text-center">
-                  {category.icon}
-                </span>
+                {category.icon && (
+                  <span className="material-symbols-outlined text-sm">
+                    {category.icon}
+                  </span>
+                )}
                 {category.name}
               </button>
             ))}
-          </nav>
-        </aside>
-
-        {/* Main Content */}
-        <main className="flex-1 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProducts.map((product) => (
-              <div
-                key={product.id}
-                className="bg-white rounded-xl shadow-sm hover:shadow-lg transition-shadow overflow-hidden"
-              >
-                <div
-                  className="w-full aspect-video bg-cover bg-center"
-                  style={{ backgroundImage: `url("${product.image}")` }}
-                />
-                <div className="p-4">
-                  <h3 className="text-lg font-bold text-[#181411] mb-2">
-                    {product.name}
-                  </h3>
-                  <p className="text-sm text-[#897561] mb-3 line-clamp-2">
-                    {product.description}
-                  </p>
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-xl font-bold text-primary">
-                      €{product.price.toFixed(2)}
-                    </span>
-                    <span className="text-xs text-[#897561]">
-                      Stock: {product.stock}
-                    </span>
-                  </div>
-
-                  {product.isAvailable && product.stock > 0 ? (
-                    <button
-                      onClick={() => addToCart(product)}
-                      className="w-full bg-primary text-white py-2 px-4 rounded-lg font-medium hover:bg-primary/90 transition-colors"
-                    >
-                      Ajouter au panier
-                    </button>
-                  ) : (
-                    <button
-                      disabled
-                      className="w-full bg-gray-300 text-gray-500 py-2 px-4 rounded-lg font-medium cursor-not-allowed"
-                    >
-                      Non disponible
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
           </div>
-        </main>
+        </div>
+      </header>
 
-        {/* Cart Sidebar */}
-        {items.length > 0 && (
-          <aside className="w-80 bg-white border-l border-[#f4f2f0] min-h-screen p-6">
-            <h2 className="text-lg font-bold text-[#181411] mb-4">Panier</h2>
-            <div className="space-y-4 mb-6">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg"
-                >
+      <main className="p-6 pb-32">
+        <div className="max-w-7xl mx-auto">
+          {/* Products Grid */}
+          {filteredProducts.length === 0 ? (
+            <div className="text-center py-12">
+              <span className="material-symbols-outlined text-6xl text-[#897561] mb-4">
+                inventory_2
+              </span>
+              <p className="text-xl text-[#897561]">Aucun produit disponible</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {filteredProducts.map((product) => {
+                const quantityInCart = getItemQuantity(product.id);
+
+                return (
                   <div
-                    className="w-12 h-12 bg-cover bg-center rounded"
-                    style={{ backgroundImage: `url("${item.image}")` }}
-                  />
-                  <div className="flex-1">
-                    <h4 className="font-medium text-[#181411] text-sm">
-                      {item.name}
-                    </h4>
-                    <p className="text-xs text-[#897561]">
-                      €{item.price.toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                      className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs hover:bg-gray-300"
-                    >
-                      -
-                    </button>
-                    <span className="text-sm font-medium w-6 text-center">
-                      {item.quantity}
-                    </span>
-                    <button
-                      onClick={() => {
-                        const product = products.find((p) => p.id === item.id);
-                        if (product && item.quantity + 1 > product.stock) {
-                          toast.error("Stock insuffisant");
-                          return;
-                        }
-                        updateQuantity(item.id, item.quantity + 1);
-                      }}
-                      className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs hover:bg-gray-300"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    key={product.id}
+                    className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    {/* Product Image */}
+                    {product.image ? (
+                      <div
+                        className="w-full h-48 bg-cover bg-center"
+                        style={{ backgroundImage: `url("${product.image}")` }}
+                      />
+                    ) : (
+                      <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-6xl text-gray-400">
+                          image
+                        </span>
+                      </div>
+                    )}
 
-            <div className="border-t pt-4">
-              <div className="flex justify-between items-center mb-4">
-                <span className="text-lg font-bold text-[#181411]">Total</span>
-                <span className="text-xl font-bold text-primary">
-                  €{getTotalPrice().toFixed(2)}
-                </span>
-              </div>
-              <button className="w-full bg-primary text-white py-3 px-4 rounded-lg font-bold hover:bg-primary/90 transition-colors">
-                Commander
-              </button>
+                    {/* Product Info */}
+                    <div className="p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-bold text-[#181411]">
+                          {product.name}
+                        </h3>
+                        <span className="text-lg font-bold text-primary">
+                          €{product.price.toFixed(2)}
+                        </span>
+                      </div>
+
+                      {product.description && (
+                        <p className="text-sm text-[#897561] mb-3 line-clamp-2">
+                          {product.description}
+                        </p>
+                      )}
+
+                      {/* Stock Badge */}
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs text-[#897561]">
+                          {product.stock} en stock
+                        </span>
+                        {product.stock < 10 && (
+                          <span className="text-xs text-orange-600 font-medium">
+                            Stock limité !
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Add to Cart */}
+                      {quantityInCart > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              handleUpdateQuantity(
+                                product.id,
+                                quantityInCart - 1
+                              )
+                            }
+                            className="w-10 h-10 flex items-center justify-center bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                          >
+                            <span className="material-symbols-outlined">
+                              remove
+                            </span>
+                          </button>
+                          <div className="flex-1 text-center font-bold text-[#181411]">
+                            {quantityInCart}
+                          </div>
+                          <button
+                            onClick={() =>
+                              handleUpdateQuantity(
+                                product.id,
+                                quantityInCart + 1
+                              )
+                            }
+                            disabled={quantityInCart >= product.stock}
+                            className="w-10 h-10 flex items-center justify-center bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined">
+                              add
+                            </span>
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleAddToCart(product)}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                        >
+                          <span className="material-symbols-outlined">
+                            add_shopping_cart
+                          </span>
+                          Ajouter
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          </aside>
-        )}
-      </div>
+          )}
+        </div>
+      </main>
+
+      {/* Floating Cart Summary */}
+      {itemsCount > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#f4f2f0] p-4 shadow-lg">
+          <div className="max-w-7xl mx-auto flex items-center justify-between">
+            <div>
+              <p className="text-sm text-[#897561]">
+                {itemsCount} article{itemsCount > 1 ? "s" : ""}
+              </p>
+              <p className="text-xl font-bold text-[#181411]">
+                €{total.toFixed(2)}
+              </p>
+            </div>
+            <button
+              onClick={() => router.push("/cart")}
+              className="flex items-center gap-2 px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              Voir le panier
+              <span className="material-symbols-outlined">arrow_forward</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
