@@ -46,6 +46,7 @@ model Product {
   
   category    Category     @relation(fields: [categoryId], references: [id])
   orderItems  OrderItem[]
+  stockAdjustments StockAdjustment[]
 }
 
 model Order {
@@ -77,5 +78,18 @@ model OrderItem {
   
   order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product   Product @relation(fields: [productId], references: [id])
+}
+
+model StockAdjustment {
+  id            String   @id @default(cuid())
+  productId     String
+  quantity      Int
+  type          String   // ADD, REMOVE, SET
+  reason        String?
+  previousStock Int
+  newStock      Int
+  createdAt     DateTime @default(now())
+  
+  product       Product  @relation(fields: [productId], references: [id])
 }
 
